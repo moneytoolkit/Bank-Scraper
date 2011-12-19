@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 
-import sys
-import os
-import re
 import logging
-import simplejson
+
+from utils.dateparser import DateParser
 
 # our list of suppoted scrapers
 from scrapers.all_scrapers import AllScrapers
@@ -18,11 +16,8 @@ class Facade:
 
 
 class ScraperController:
-'''recieves scraper body requests calls the appropriate scraper
-   takes the scraper response and wraps it in json and passes it back
-'''
-
-    self.persister = None
+    '''recieves scraper body requests calls the appropriate scraper
+    takes the scraper response and wraps it in json and passes it back'''
 
     def addPersistance(self, persister):
         self.persister = persister
@@ -32,7 +27,6 @@ class ScraperController:
 
         scraperFactory = AllScrapers()
         return scraperFactory.getScraper(bankId, credentials)
-
 
    
     def get_accounts(self, allofit):
@@ -45,10 +39,6 @@ class ScraperController:
             {
               "name": "5365742d436f6f6b6965", 
               "value": "6664613d72323139383132313139313b20706174683d2f3b20657870697265733d"
-            }, 
-            {
-              "name": "44617465", 
-              "value": "5361742c203233204f637420323031302031313a33303a323720474d54"
             } 
           ], 
           "step": 1, 
@@ -83,24 +73,22 @@ class ScraperController:
             
             scrape_result = scc.getacclist(facade, matching_accounts, 'unusedtoken', step, allofit)
             
-            respJson = simplejson.dumps(scc.response, indent = 2)
-            
             # if we have not got got a list of accounts yet then just return our wrappers and the scraper response
             if "got list" != scrape_result:
                 response = {}
                 response['message'] = scrape_result
                 response['bankid'] = bank['bankId']
-                response['request'] = respJson
+                response['request'] = scc.response
             else:
                 
                 accounts = scc.myAccounts
                 
-                bank_display = scc.getDisplay()
+                # bank_display = scc.getDisplay()
                 
                 found_accs = []
                 
                 got_some_acc = False
-                
+                accnum = 1
                 for accpair in accounts:
                     
                     got_some_acc = True
@@ -113,17 +101,6 @@ class ScraperController:
                     
                     # a status flag - if all local file or API handling goes well
                     new = True
-
-                    # if we have a permanent list of accounts then check our new found list to see if we can find an existing account in the users account list
-                    if self.persister != None:
-
-
-                    
-                    
-                    #    logging.debug("checking existing accounts")
-                    #    for account in user.accounts:
-                    #     if we dont find  this account then ad it to our list by setting good = True
-                    
                     
                     # got a new account so set up default attributes for this account to store in our file of accounts or spreadsheet
                     if new == True:
@@ -136,21 +113,16 @@ class ScraperController:
                         attributes['synchbal'] = 0
                         attributes['synched'] = False
                         attributes['balance'] = 0
-
-                        
                         
                         #TODO - if new accounts update our accounts with a unique key
-                        attributes['id'] = 'a1'
-                        attributes['keyname'] = 'a1'
-                        
+                        attributes['id'] = 'a' + str(accnum)
+                        attributes['keyname'] = attributes['id'] 
+                        accnum = accnum + 1
                         
                         # TODO review ths usage
-                        attributes['parser'] = accdesc['parser']
+                        attributes['parser'] = ''
                         attributes['synchbalwhich'] = "Positive"
-                        attributes['which'] = "Positive"
-                        
-
-                        
+                        attributes['which'] = "Positive"                        
                         
                         logging.debug("adding account to the list")
                         found_accs.append(attributes)
@@ -161,7 +133,7 @@ class ScraperController:
                 response = {}
                 response['message'] = "good"
                 response['bankid'] = bank['bankId']
-                response['request'] = respJson
+                response['request'] = scc.response
                 response['accounts'] = found_accs
             
         else:    
@@ -169,7 +141,6 @@ class ScraperController:
             response['message'] = "bank not supported"
             response['bankid'] = bank['bankId']
             
-
         return response
 
 
@@ -227,7 +198,7 @@ class ScraperController:
 #   } 
 # }
 
-
+# or it sends the account list back 
 
 
 
@@ -300,3 +271,81 @@ class ScraperController:
 #   } 
 # }
 
+
+
+    def synch_accounts(self, allofit, accountlist):
+            
+        user = 'user'
+        facade = Facade(user);
+
+
+        step = allofit['step']
+        bankArray = allofit['credentials']              # badly worded 'credentials' - it is the list of banks with credentials - a list of one now!
+        bank = bankArray[0]
+        bankId = bank['bankId']
+
+        logging.info("found:    - " + bankId)
+
+        scc = self.getScraper(bankId, bank['credentials'])    # correctly worded credentials 
+        
+        matching_accounts = {}
+            
+        if scc:
+                    
+            # find accounts that use these credentials
+            for ac in accountlist:
+                if ac['bankname'] == bankId:           # it should do
+
+                    account_url = ['Person', user, 'Account', ac['keyname']]
+                    matching_accounts[ac['accountname']] = account_url 
+                      
+            # in case we are in some terible loop at least stop at 100 steps
+            if step < 100:
+                scrape_result = scc.getxactlist(facade, matching_accounts, 'unusedtoken', step, allofit)
+                
+                response = {}
+                response['message'] = "good"
+                response['bankid'] = bank['bankId']
+                response['request'] = scc.response
+                
+                if ("good" == scrape_result) or ("account list" == scrape_result):
+                    response['message'] = "good"
+
+                elif "got account" == scrape_result:
+                    sb = scc.statementbuilder
+                    
+                    xacts = sb.getxactlist()
+                    bal = sb.getSynchBalance()
+                    id = sb.getSynchAccountID()
+                    
+                    if bal < 0:
+                        bal = 0 - bal
+                        sbalwhich = 'negative'
+                    else:
+                        sbalwhich = 'positive'
+                    
+                    strbal = str(bal)
+                    
+                    dp = DateParser()
+                    
+                    bankxact = {}
+
+                    bankxact["id"] = id
+                    bankxact["synchbal"] = strbal
+                    bankxact["synchbalwhich"] = sbalwhich
+                    bankxact["synchdate"] = dp.ymdhms_from_date(dp.todatetime())
+                    bankxact["xacts"] = xacts
+                    
+                    response['bankxact'] = bankxact              
+                
+                else:
+                    response['message'] = scrape_result
+                
+        else:            
+            response = {}
+            response["message"] = "bank not supported"
+            response["bankid"] = bank['bankId']
+            
+        
+        return response
+    

@@ -25,6 +25,7 @@ class Xact:
   pass
 
 class Account:
+  keyname = ''
   synchbal = 0
   synched = True
   synchbal = 0
@@ -133,7 +134,11 @@ class StatementBuilder():
 
         self.facade._statkey =  self._current_statement
 
-
+    def make_recent_dif_statement(self, type, filename, body):
+        self.slidingDif = True
+        self.make_recent_statement(type, filename, body)
+    
+    
     def make_statement(self, type, filename, body):
         self.make_statement_fixed(type, filename, body, False)
 

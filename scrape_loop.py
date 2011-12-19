@@ -3,13 +3,9 @@
 
 import logging
 import codecs
-import sys
-import os
-import re
 
 from scraper_controller import ScraperController
-from scrapers.all_crapers import AllScrapers
-
+from scrapers.all_scrapers import AllScrapers
 
 import mechanize
 
@@ -22,25 +18,23 @@ class ScrapeHTTPLoop:
         return ''.join( [ "%02X" % ord( x ) for x in byteStr ] )
 
     def HexToByte(self, hexStr ):
-     
-        bytes = []
-    
+        mbytes = []
         for i in range(0, len(hexStr), 2):
-            bytes.append( chr( int (hexStr[i:i+2], 16 ) ) )
+            mbytes.append( chr( int (hexStr[i:i+2], 16 ) ) )
     
-        return ''.join( bytes ).decode("utf-8")
+        return ''.join( mbytes ).decode("utf-8")
 
 
     def output_page(self, name, page):
 
         root_path = './pagedump/' + name;                   # add any path in here
-        file = codecs.open(root_path,"wb", "utf-8-sig");
+        mfile = codecs.open(root_path,"wb", "utf-8-sig");
         
-        file.write(page)
-        file.close()
+        mfile.write(page)
+        mfile.close()
 
 
-    def loop(self, message):
+    def loop(self, sync, message, accountlist):
 
         # get the bank id for this sesh
         bankId = message[0]['bankId']
@@ -62,6 +56,7 @@ class ScrapeHTTPLoop:
         
         logging.info("Start URL = " + self.startUrl)
 
+        mXacts =[]
 
         controller = ScraperController()
 
@@ -74,20 +69,19 @@ class ScrapeHTTPLoop:
 
         do_loop = True
 
+        request = {}
         while do_loop:
-
             
-            # open the first page
+            # open the bank page
             self.b.open(bank_url, post_data)
 
+            # get raw page data
             raw = self.b.response().get_data()
 
-                    # write out the start page
+            # write out the page for any debugging
             self.output_page(str(next_step) + "_page.html", raw.decode('utf-8'))
 
-
-            request = {}
-
+            # build up a page scrape request to pass to the bank scraper
             request['body'] = 'tbd'        
             request['status'] = 200
             request['bankurl'] = self.ByteToHex(self.startUrl)
@@ -99,8 +93,11 @@ class ScrapeHTTPLoop:
 
             request['body'] = self.ByteToHex(raw) 
 
-            # call the controller with this page
-            response = controller.get_accounts(request)
+            # call the controller with this page 
+            if sync:
+                response = controller.synch_accounts(request, accountlist)
+            else:
+                response = controller.get_accounts(request)
 
             logging.debug('>>> -------------------------')
             logging.debug('>>> -------------------------------------------->')
@@ -108,32 +105,60 @@ class ScrapeHTTPLoop:
 
             # decypher what went on in the parsing
             status = response['message']
-
               
+            # if all went well in the scraper
             if status == 'good':
-              next_request = response['request']
+                next_request = response['request']
 
-              method = next_request['method']
-              bank_url = self.HexToByte(next_request['url'])
-              next_step = next_request['step']
-              post = self.HexToByte(next_request['data'])
+                logging.debug(next_request)
+
+                method = next_request['method']
+                bank_url = self.HexToByte(next_request['url'])
+                next_step = next_request['step']
+                post = self.HexToByte(next_request['data'])
 
 
-              logging.debug("METHOD: " + method)
-              logging.debug("URL: " + bank_url)
-              logging.debug("STEP:" + str(next_step))
-              logging.debug("DATA: " + post)
+                logging.debug("METHOD: " + method)
+                logging.debug("URL: " + bank_url)
+                logging.debug("STEP:" + str(next_step))
+                logging.debug("DATA: " + post)
 
-              post_data = None
-              if method == 'POST':
-                post_data = post
+                post_data = None
+                if method == 'POST':
+                    post_data = post
 
+
+                if "accountlist" in next_request:
+                    aclist = next_request["accountlist"]
+                    accountid = ""
+                    accountpath = []
+                    
+                    if "accountid" in next_request:
+                        accountid = next_request["accountid"]
+                    
+                    if "accountpath" in next_request:
+                        accountpath = next_request["accountpath"]
+                    
+                    request["accountlist"] = aclist
+                    request["accountid"] = accountid
+                    request["accountpath"] = accountpath
+                                                        
+                    
+                    if "bankxact" in response:
+                        bankxact = response["bankxact"]
+                        mXacts.append(bankxact)
+                    else:
+                        logging.warn("No bankxact")
+                    
+                
+                elif sync:               # only expect accountlist on the transaction sync
+                    logging.warn("no accounts")
 
 
             if method == 'END':
-              do_loop = False
+                do_loop = False
             if status != 'good':
-              do_loop = False
+                do_loop = False
 
 
         return response

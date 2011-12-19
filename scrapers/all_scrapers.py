@@ -71,7 +71,7 @@ class AllScrapers():
     def getStartUrl(self, id):
         bl = None
         if id in self.__new_banklist:
-            bl = self.__new_banklist
+            bl = self.__new_banklist[id]
         
         if bl != None:
             return bl['url']

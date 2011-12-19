@@ -4,7 +4,6 @@
 import sys
 import logging
 import simplejson
-
 from scrape_loop import ScrapeHTTPLoop
 
 # yes i want to see it all!!
@@ -18,97 +17,67 @@ class WebBrowse():
     """Our main object to set up the browser loop.
     """
 
-  #accountList is the list of accounts a user has
-  def doAccountList(self, opts):
-    """call the loop to log into our accounts.
+    #accountList is the list of accounts a user has
+    def doAccountList(self, opts):
+        """call the loop to log into our accounts.
 
-    opts: the command line array minus the program name - the first value is the name of a credential file.
-    """
-
-
-    # we set up a folder for our own private credentials outside our code path- NEVER check in any credentials
-    
-    file = open('../secure_data/' + opts[0], 'r')
-    raw = file.read();
-    file.close()
-    creds = simplejson.loads(raw)
-    
-    print creds
+        opts: the command line array minus the program name - the first value is the name of a credential file.
+        1: command [add, sync] add = add banks to bank file, sync = get recent transactions
+        2: credentials and bank id file
+        3: bank list file - to update on an
+        """
 
 
-    url = 'https://www.nwolb.com/default.aspx'
+        # we set up a folder for our own private credentials outside our code path- NEVER check in any credentials
+        
+        mfile = open('../secure_data/' + opts[1], 'r')
+        raw = mfile.read();
+        mfile.close()
+        creds = simplejson.loads(raw)
+        
 
+        if opts[0] =='add':
+            # call the loop that gets pages and hands them to the individual scrapers
+            HTTPloop = ScrapeHTTPLoop()
 
-    HTTPloop = ScrapeHTTPLoop()
+            scrape_result = HTTPloop.loop(False, creds, None)
 
-    scrape_result = HTTPloop.loop(url, creds)
+            bank_data_string = simplejson.dumps(scrape_result, indent=2)
 
-    print simplejson.dumps(scrape_result, indent=2)
-    
+            # accs = {}
+            # for acc in bank_data_string['accounts']
+            #     accs[acc.]
 
-  def doSynchro(self, opts):
+            mfile = open('../secure_data/' + opts[2], 'w')
+            raw = mfile.write(bank_data_string);
+            mfile.close()
 
-    
-    file = open('./tests/data/natwest-creds.json', 'r')
-    raw = file.read();
-    file.close()
+            print 'writing ..........'
+            print bank_data_string
 
-    creds = simplejson.loads(raw)
-    cb = creds[0]['credentials']
-    print cb
+        else:
 
+            mfile = open('../secure_data/' + opts[2], 'r')
+            raw = mfile.read();
+            mfile.close()
 
+            response = simplejson.loads(raw)
+            account_list = response['accounts'];
 
+            # call the loop that gets pages and hands them to the individual scrapers
+            HTTPloop = ScrapeHTTPLoop()
 
+            scrape_result = HTTPloop.loop(True, creds, account_list)
 
+            bank_data_string = simplejson.dumps(scrape_result, indent=2)
 
+            mfile = open('../secure_data/' + opts[3], 'w')
+            raw = mfile.write(bank_data_string);
+            mfile.close()
 
-    scraper = TestBankScraper(cb)
-    scraper.facade = Facade('danm')
-    scraper.token = 'nobsack'
-
-    scraper._setupBrowser()
-
-
-
-
-
-
-
-
-    #file = open('./tests/data/account1.html', 'r')
-    file = open('./tests/data/account2.html', 'r')
-    raw = file.read();
-    file.close()
-
-    soup = UglySoup(raw)
-
-    print soup.ppp("test file loaded")
-
-
-    scraper._processNormAccount( raw, ['Person','DanM','Account','a1'], 2304 )
-
-    #scraper._processCCAccount( raw, ['Person','DanM','Account','a2'], -456.09 )
-
-    s = scraper.statementlist[0]
-
-    sm = {}
-    sm['balance'] = s.getSynchBalance()
-    sm['xacts'] = s.getxactlist()
-    sm['path'] = s.get_s_path()
-
-    print simplejson.dumps(sm, indent = 4)
-
-  def display(self, opts):
-    file = open(opts[0], 'r')
-    raw = file.read();
-    file.close()
-
-    soup = UglySoup(raw)
-
-    print soup.ppp("test file loaded")
-
-
+            print 'writing xacts ..........'
+            print bank_data_string
+        
 
 if __name__ == "__main__":
 
